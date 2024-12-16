@@ -1,15 +1,16 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QMenuBar,
-                             QStatusBar, QHBoxLayout, QDockWidget, QFileDialog)
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QMenuBar, 
+                           QStatusBar, QHBoxLayout, QDockWidget, QFileDialog)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
 from .panels.project_explorer import ProjectExplorerPanel
 from .panels.properties import PropertiesPanel
-from .board_view import BoardView, ElementGraphicsItem
+from .board_view import BoardView, ElementGraphicsItem, ConnectionGraphicsItem  # ConnectionGraphicsItem'i ekledik
 from core.project import Project
 from core.board import Board
 from core.element import Element
 from core.commands import CommandStack
 from utils.file_ops import ProjectFileHandler
+from uuid import uuid4  # uuid4'ü de ekleyelim
 
 
 class MainWindow(QMainWindow):
@@ -168,7 +169,7 @@ class MainWindow(QMainWindow):
     def save_project(self, save_as=False):
         if not self.project:
             return
-
+            
         if not self.project.save_path or save_as:
             filepath, _ = QFileDialog.getSaveFileName(
                 self,
@@ -178,21 +179,30 @@ class MainWindow(QMainWindow):
             )
             if not filepath:
                 return
-
+                
             if not filepath.endswith('.ntp'):
                 filepath += '.ntp'
-
+            
             self.project.save_path = filepath
-
+        
         try:
-            # Tüm elementlerin pozisyonlarını kaydet
+            # Elementlerin pozisyonlarını kaydet
             for item in self.board_view.scene.items():
                 if isinstance(item, ElementGraphicsItem):
                     item.element.position = {'x': item.pos().x(), 'y': item.pos().y()}
-
+                elif isinstance(item, ConnectionGraphicsItem):
+                    # Bağlantıları kaydet
+                    connection = {
+                        'source_id': item.source_item.element.id,
+                        'target_id': item.target_item.element.id
+                    }
+                    self.current_board.connections[str(uuid4())] = connection
+            
             ProjectFileHandler.save_project(self.project, self.project.save_path)
             self.statusBar.showMessage(f'Proje kaydedildi: {self.project.save_path}')
         except Exception as e:
+            print(f"Save error: {str(e)}")
+            self.statusBar.showMessage(f'Kaydetme hatası: {str(e)}')
             print(f"Save error: {str(e)}")
             self.statusBar.showMessage(f'Kaydetme hatası: {str(e)}')
 
@@ -203,47 +213,56 @@ class MainWindow(QMainWindow):
             "",
             "Narrative Tool Projesi (*.ntp);;Tüm Dosyalar (*.*)"
         )
-
+        
         if not filepath:
             return
-
+            
         try:
             # Projeyi yükle
             self.project = ProjectFileHandler.load_project(filepath)
             self.project.save_path = filepath
-
+            
             # Yeni board view oluştur
             self.board_view = BoardView(self)
             old_widget = self.layout.itemAt(0).widget()
             self.layout.replaceWidget(old_widget, self.board_view)
             old_widget.deleteLater()
-
+            
             # İlk board'u görüntüle
             if self.project.boards:
                 self.current_board = next(iter(self.project.boards.values()))
-
-                # Elementleri ve bağlantıları görsel olarak oluştur
+                
+                # Önce elementleri yükle
+                element_items = {}  # element_id -> ElementGraphicsItem eşleşmesi
                 for element in self.current_board.elements.values():
                     item = ElementGraphicsItem(element)
                     pos_x = element.position.get('x', 0)
                     pos_y = element.position.get('y', 0)
                     item.setPos(pos_x, pos_y)
                     self.board_view.scene.addItem(item)
-
+                    element_items[element.id] = item
+                
+                # Sonra bağlantıları yükle
+                for connection in self.current_board.connections.values():
+                    source_item = element_items.get(connection['source_id'])
+                    target_item = element_items.get(connection['target_id'])
+                    if source_item and target_item:
+                        conn_item = ConnectionGraphicsItem(source_item, target_item)
+                        self.board_view.scene.addItem(conn_item)
+                
                 # Sol paneli güncelle
                 self.project_explorer.refresh_boards(self.project)
                 self.project_explorer.refresh_elements(self.current_board)
                 self.project_explorer.refresh_components(self.project)
-
+                
                 # Komut yığınını temizle
                 self.command_stack = CommandStack()
-
+            
             self.statusBar.showMessage(f'Proje yüklendi: {filepath}')
         except Exception as e:
             import traceback
             traceback.print_exc()
             self.statusBar.showMessage(f'Yükleme hatası: {str(e)}')
-
     def switch_to_board(self, board):
         """Board'u değiştir"""
         if board == self.current_board:

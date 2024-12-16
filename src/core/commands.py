@@ -1,42 +1,47 @@
 ﻿from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-from .element import Element
+from src.core.element import Element
+from PyQt6.QtCore import QPointF
 
+
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any
+from src.core.element import Element
+from PyQt6.QtCore import QPointF
 
 class Command(ABC):
     """Temel komut sınıfı"""
-
+    
     @abstractmethod
     def execute(self):
         """Komutu uygula"""
         pass
-
+        
     @abstractmethod
     def undo(self):
         """Komutu geri al"""
         pass
 
-
 class AddElementCommand(Command):
     """Element ekleme komutu"""
-
     def __init__(self, board_scene, element, pos):
         self.scene = board_scene
         self.element = element
         self.pos = pos
         self.element_item = None
-
+        
     def execute(self):
-        from ..gui.board_view import ElementGraphicsItem
+        from src.gui.board_view import ElementGraphicsItem
         self.element_item = ElementGraphicsItem(self.element)
         self.element_item.setPos(self.pos)
         self.scene.addItem(self.element_item)
+        
         # Board'a elementi ekle
         view = self.scene.views()[0]
         if view.main_window and view.main_window.current_board:
             view.main_window.current_board.elements[self.element.id] = self.element
             view.main_window.project_explorer.refresh_elements(view.main_window.current_board)
-
+        
     def undo(self):
         if self.element_item:
             # Board'dan elementi kaldır
@@ -48,29 +53,30 @@ class AddElementCommand(Command):
             # Sahneden elementi kaldır
             self.scene.removeItem(self.element_item)
 
-
 class DeleteElementCommand(Command):
     """Element silme komutu"""
-
     def __init__(self, board_scene, element_item):
         self.scene = board_scene
         self.element_item = element_item
         self.element = element_item.element
         self.pos = element_item.pos()
         self.connections = []
+        self.was_executed = False
+        print(f"Created delete command for element {self.element.title}")
 
     def execute(self):
         """Elementi ve bağlantılarını sil"""
         try:
+            print(f"Executing delete for element {self.element.title}")
             # Bağlantıları kaydet ve sil
-            if self.scene:
+            if self.scene and not self.was_executed:  # Sadece ilk kez yürütülüyorsa bağlantıları kaydet
                 for item in self.scene.items():
                     if isinstance(item, ConnectionGraphicsItem):
                         if item.source_item == self.element_item or item.target_item == self.element_item:
                             self.connections.append({
-                                'connection': item,
-                                'source': item.source_item,
-                                'target': item.target_item
+                                'source_id': item.source_item.element.id,
+                                'target_id': item.target_item.element.id,
+                                'item': item
                             })
                             self.scene.removeItem(item)
 
@@ -84,22 +90,22 @@ class DeleteElementCommand(Command):
             # Sahneden elementi sil
             if self.scene:
                 self.scene.removeItem(self.element_item)
-
+            
+            self.was_executed = True
+            print(f"Successfully deleted element {self.element.title}")
         except Exception as e:
             print(f"Error in DeleteElementCommand execute: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def undo(self):
         """Elementi ve bağlantılarını geri yükle"""
         try:
+            print(f"Undoing delete for element {self.element.title}")
             # Elementi geri ekle
             if self.scene:
                 self.scene.addItem(self.element_item)
                 self.element_item.setPos(self.pos)
-
-            # Bağlantıları geri ekle
-            for conn in self.connections:
-                if self.scene:
-                    self.scene.addItem(conn['connection'])
 
             # Board'a elementi geri ekle
             view = self.scene.views()[0]
@@ -107,37 +113,127 @@ class DeleteElementCommand(Command):
                 view.main_window.current_board.elements[self.element.id] = self.element
                 view.main_window.project_explorer.refresh_elements(view.main_window.current_board)
 
+            # Bağlantıları geri oluştur
+            for conn_data in self.connections:
+                source_item = None
+                target_item = None
+                for item in self.scene.items():
+                    if isinstance(item, ElementGraphicsItem):
+                        if item.element.id == conn_data['source_id']:
+                            source_item = item
+                        elif item.element.id == conn_data['target_id']:
+                            target_item = item
+                
+                if source_item and target_item:
+                    conn = ConnectionGraphicsItem(source_item, target_item)
+                    self.scene.addItem(conn)
+            
+            self.was_executed = False
+            print(f"Successfully restored element {self.element.title}")
         except Exception as e:
             print(f"Error in DeleteElementCommand undo: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        """Elementi ve bağlantılarını geri yükle"""
+        try:
+            print(f"Undoing delete for element: {self.element.title}")  # Debug için
+            
+            # Elementi geri ekle
+            if self.scene:
+                self.scene.addItem(self.element_item)
+                self.element_item.setPos(self.pos)
+                print("Restored element to scene")  # Debug için
 
+            # Bağlantıları geri ekle
+            for conn in self.connections:
+                if self.scene:
+                    self.scene.addItem(conn['connection'])
+                    print("Restored connection")  # Debug için
+
+            # Board'a elementi geri ekle
+            view = self.scene.views()[0]
+            if view.main_window and view.main_window.current_board:
+                view.main_window.current_board.elements[self.element.id] = self.element
+                view.main_window.project_explorer.refresh_elements(view.main_window.current_board)
+                print("Restored to board data")  # Debug için
+
+        except Exception as e:
+            print(f"Error in DeleteElementCommand undo: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
 class MoveElementCommand(Command):
     """Element taşıma komutu"""
-
     def __init__(self, element_item, old_pos, new_pos):
         self.element_item = element_item
         self.old_pos = old_pos
         self.new_pos = new_pos
         print(f"Created move command from {old_pos} to {new_pos}")
-
+        
     def execute(self):
-        """Elementi yeni konuma taşı"""
         try:
             self.element_item.setPos(self.new_pos)
             print(f"Moved element to {self.new_pos}")
         except Exception as e:
             print(f"Error in MoveElementCommand execute: {str(e)}")
-
+        
     def undo(self):
-        """Elementi eski konumuna geri taşı"""
         try:
             self.element_item.setPos(self.old_pos)
             print(f"Moved element back to {self.old_pos}")
         except Exception as e:
             print(f"Error in MoveElementCommand undo: {str(e)}")
 
-
 class UpdateElementCommand(Command):
+    """Element özelliklerini güncelleme komutu"""
+    def __init__(self, element_item, property_name: str, old_value: Any, new_value: Any):
+        self.element_item = element_item
+        self.property_name = property_name
+        self.old_value = old_value
+        self.new_value = new_value
+        
+    def execute(self):
+        self._set_property(self.new_value)
+        
+    def undo(self):
+        self._set_property(self.old_value)
+        
+    def _set_property(self, value):
+        if self.property_name == "title":
+            self.element_item.element.title = value
+            self.element_item.update()
+            # Sol paneli güncelle
+            view = self.element_item.scene().views()[0]
+            if view.main_window and view.main_window.current_board:
+                view.main_window.project_explorer.refresh_elements(view.main_window.current_board)
+        elif self.property_name == "content":
+            self.element_item.element.content = value
+            self.element_item.update()
+        elif self.property_name == "size":
+            self.element_item.setRect(0, 0, value['width'], value['height'])
+            self.element_item.element.size = value
+        elif self.property_name == "color":
+            self.element_item.setBrush(value)
+    """Element taşıma komutu"""
+    def __init__(self, element_item, old_pos, new_pos):
+        self.element_item = element_item
+        self.old_pos = old_pos
+        self.new_pos = new_pos
+        print(f"Created move command from {old_pos} to {new_pos}")
+        
+    def execute(self):
+        try:
+            self.element_item.setPos(self.new_pos)
+            print(f"Moved element to {self.new_pos}")
+        except Exception as e:
+            print(f"Error in MoveElementCommand execute: {str(e)}")
+        
+    def undo(self):
+        try:
+            self.element_item.setPos(self.old_pos)
+            print(f"Moved element back to {self.old_pos}")
+        except Exception as e:
+            print(f"Error in MoveElementCommand undo: {str(e)}")
     """Element özelliklerini güncelleme komutu"""
 
     def __init__(self, element_item, property_name: str, old_value: Any, new_value: Any):
@@ -168,7 +264,6 @@ class UpdateElementCommand(Command):
             self.element_item.element.size = value
         elif self.property_name == "color":
             self.element_item.setBrush(value)
-
 
 class CommandStack:
     """Komut yığını - Geri alma/ileri alma işlemlerini yönetir"""

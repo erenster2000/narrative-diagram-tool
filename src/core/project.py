@@ -2,6 +2,8 @@ from uuid import uuid4
 from typing import List, Optional, Dict
 from datetime import datetime
 
+from src.core.board import Board
+
 class Project:
     """Narrative tool projesi için ana sınıf"""
     
@@ -36,7 +38,7 @@ class Project:
         self.starting_element = element_id
         self.modified_at = datetime.now()
     
-    def to_dict(self) -> dict:
+    def to_dict(self):
         """Projeyi JSON serileştirme için dict'e çevir"""
         return {
             'id': self.id,

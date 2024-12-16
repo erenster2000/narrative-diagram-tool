@@ -1,6 +1,9 @@
+from sqlite3 import Connection
 from uuid import uuid4
 from typing import List, Dict, Optional
 from datetime import datetime
+
+from src.core.element import Element
 
 class Board:
     """Board sınıfı - projedeki her bir çalışma alanını temsil eder"""
@@ -50,28 +53,26 @@ class Board:
         """ID'ye göre element getir"""
         return self.elements.get(element_id)
         
-    def to_dict(self) -> dict:
+    def to_dict(self):
         """Board'u JSON serileştirme için dict'e çevir"""
         return {
             'id': self.id,
             'name': self.name,
             'root': self.root,
             'elements': {eid: elem.to_dict() for eid, elem in self.elements.items()},
-            'branches': {bid: branch.to_dict() for bid, branch in self.branches.items()},
-            'connections': {cid: conn.to_dict() for cid, conn in self.connections.items()},
+            'connections': self.connections,  # Bağlantıları kaydet
             'children': self.children,
             'created_at': self.created_at.isoformat(),
-            'modified_at': self.modified_at.isoformat(),
+            'modified_at': self.modified_at.isoformat()
         }
     
     @classmethod
-    def from_dict(cls, data: dict) -> 'Board':
+    def from_dict(cls, data):
         """Dict'ten board oluştur"""
-        board = cls(data['name'], data['root'])
+        board = cls(data['name'], data.get('root', False))
         board.id = data['id']
         board.children = data['children']
+        board.connections = data.get('connections', {})  # Bağlantıları yükle
         board.created_at = datetime.fromisoformat(data['created_at'])
         board.modified_at = datetime.fromisoformat(data['modified_at'])
-        
-        # Element, branch ve connection'ları daha sonra yükleyeceğiz
         return board
