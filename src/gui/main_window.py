@@ -4,13 +4,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
 from .panels.project_explorer import ProjectExplorerPanel
 from .panels.properties import PropertiesPanel
-from .board_view import BoardView, ElementGraphicsItem, ConnectionGraphicsItem  # ConnectionGraphicsItem'i ekledik
+from .board_view import BoardView, ElementGraphicsItem, ConnectionGraphicsItem
+from .toolbar import EditorToolBar  # Toolbar'ı import et
 from core.project import Project
 from core.board import Board
 from core.element import Element
 from core.commands import CommandStack
 from utils.file_ops import ProjectFileHandler
-from uuid import uuid4  # uuid4'ü de ekleyelim
+from uuid import uuid4
 
 
 class MainWindow(QMainWindow):
@@ -35,27 +36,36 @@ class MainWindow(QMainWindow):
         # Pencere başlığı ve boyutu
         self.setWindowTitle('Narrative Tool')
         self.resize(1200, 800)
-
+        
         # Ana widget ve layout
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QHBoxLayout(self.central_widget)
-
-        # Board görünümü
+        
+        # Önce Board görünümü
         self.board_view = BoardView(self)
         self.layout.addWidget(self.board_view)
-
+        
         # Sol panel
         self.project_explorer = ProjectExplorerPanel(self)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.project_explorer)
-
+        
         # Sağ panel
         self.properties_panel = PropertiesPanel(self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
-
+        
+        # Toolbar'ı en son ekle
+        from .toolbar import EditorToolBar
+        self.toolbar = EditorToolBar(self)
+        self.addToolBar(self.toolbar)
+        
+        # Toolbar sinyallerini bağla
+        self.toolbar.zoomChanged.connect(lambda f: self.board_view.set_zoom(f))
+        self.toolbar.gridToggled.connect(lambda v: self.board_view.set_grid_visible(v))
+        
         # Menü çubuğu
         self.create_menu_bar()
-
+        
         # Durum çubuğu
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
@@ -263,6 +273,7 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
             self.statusBar.showMessage(f'Yükleme hatası: {str(e)}')
+    
     def switch_to_board(self, board):
         """Board'u değiştir"""
         if board == self.current_board:

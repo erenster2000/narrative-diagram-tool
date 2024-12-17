@@ -1,29 +1,73 @@
 from PyQt6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsItem,
-                           QGraphicsRectItem, QMenu, QGraphicsTextItem, 
-                           QGraphicsProxyWidget, QTextEdit, QVBoxLayout, QWidget)
+                           QGraphicsRectItem, QGraphicsLineItem, QMenu, 
+                           QGraphicsTextItem, QGraphicsProxyWidget, 
+                           QTextEdit, QVBoxLayout, QWidget)
 from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPen, QBrush, QColor, QPainter, QPainterPath
+from PyQt6.QtGui import (QPen, QBrush, QColor, QPainter, QPainterPath,
+                        QTransform)  # QTransform burada olmalı
+
 
 class BoardGraphicsScene(QGraphicsScene):
     """Board için özel scene sınıfı"""
     
     def __init__(self):
         super().__init__()
-        self.setSceneRect(-5000, -5000, 10000, 10000)  # Geniş bir çalışma alanı
+        self.setSceneRect(-5000, -5000, 10000, 10000)
+        self.grid_lines = []  # Grid çizgilerini takip etmek için
+        self.grid_visible = True  # Grid görünürlüğünü takip etmek için
         self._draw_grid()
+
+    def set_grid_visible(self, visible):
+        """Grid görünürlüğünü ayarla"""
+        print(f"Setting grid visibility to: {visible}")  # Debug için
+        self.grid_visible = visible
         
+        # Tüm grid çizgilerini kaldır
+        for line in self.grid_lines:
+            self.removeItem(line)
+        self.grid_lines.clear()
+        
+        # Eğer grid görünür olacaksa yeniden çiz
+        if visible:
+            self._draw_grid()
+        self.update()
+        """Grid görünürlüğünü ayarla"""
+        self.grid_visible = visible
+        if visible:
+            self._draw_grid()
+        else:
+            # Grid çizgilerini temizle
+            for line in self.grid_lines:
+                self.removeItem(line)
+            self.grid_lines.clear()
+        self.update()
+
     def _draw_grid(self, size: int = 20):
         """Arka plan ızgarasını çiz"""
+        # Önceki grid çizgilerini temizle
+        for line in self.grid_lines:
+            self.removeItem(line)
+        self.grid_lines.clear()
+        
+        if not self.grid_visible:
+            return
+            
         pen = QPen(QColor(50, 50, 50, 100))
         pen.setStyle(Qt.PenStyle.DotLine)
         
         # Dikey çizgiler
         for x in range(-5000, 5000, size):
-            self.addLine(x, -5000, x, 5000, pen)
+            line = QGraphicsLineItem(x, -5000, x, 5000)
+            line.setPen(pen)
+            self.addItem(line)
+            self.grid_lines.append(line)
             
         # Yatay çizgiler
         for y in range(-5000, 5000, size):
-            self.addLine(-5000, y, 5000, y, pen)
+            line = QGraphicsLineItem(-5000, y, 5000, y)
+            line.setPen(pen)
+            self.addItem(line)
+            self.grid_lines.append(line)
 
 class ConnectionGraphicsItem(QGraphicsItem):
     """Elementler arası bağlantı çizgisi"""
@@ -260,6 +304,9 @@ class BoardView(QGraphicsView):
         self.zoom = 1.0
         self.zoom_factor = 1.1
         
+        # Grid ayarları
+        self.show_grid = True
+        
         # Pan ayarları
         self.last_mouse_pos = QPointF()
         self.panning = False
@@ -361,6 +408,89 @@ class BoardView(QGraphicsView):
                         self.main_window.project_explorer.refresh_elements(self.main_window.current_board)
             
         super().keyPressEvent(event)
+
+    def set_zoom(self, factor):
+        """Zoom seviyesini ayarla"""
+        print(f"Setting zoom to: {factor}")  # Debug için
+        # Zoom faktörünü sınırla
+        factor = max(0.25, min(4.0, factor))
+        
+        # Mevcut transformu sıfırla
+        self.resetTransform()
+        
+        # Yeni zoom uygula
+        self.scale(factor, factor)
+        self.zoom = factor
+        print(f"Zoom applied: {factor}")  # Debug için
+        """Zoom seviyesini ayarla"""
+        # Yeni zoom seviyesini 0.25 ile 4.0 arasında sınırla
+        factor = max(0.25, min(4.0, factor))
+        
+        # Transform matrisini sıfırla ve yeni zoom uygula
+        transform = QTransform()
+        transform.scale(factor, factor)
+        self.setTransform(transform)
+        
+        # Zoom seviyesini güncelle
+        self.zoom = factor
+        """Zoom seviyesini ayarla"""
+        # Geçerli zoom seviyesini al
+        current_factor = self.transform().m11()
+        # Yeni zoom seviyesine göre ölçeklendirme faktörünü hesapla
+        scale_factor = factor / current_factor
+        # Ölçeklendirmeyi uygula
+        self.scale(scale_factor, scale_factor)
+        self.zoom = factor
+        """Zoom seviyesini ayarla"""
+        current_factor = self.transform().m11()  # Mevcut zoom seviyesi
+        scale_factor = factor / current_factor
+        self.scale(scale_factor, scale_factor)
+        self.zoom = factor
+    
+    def fit_to_view(self):
+        """Tüm içeriği görünür pencereye sığdır"""
+        rect = self.scene.itemsBoundingRect()
+        if not rect.isEmpty():
+            # Kenarlardan biraz boşluk bırak
+            rect.adjust(-50, -50, 50, 50)
+            self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+            # Zoom seviyesini güncelle
+            self.zoom = self.transform().m11()
+            # Toolbar'daki göstergeyi güncelle
+            if self.main_window and hasattr(self.main_window, 'toolbar'):
+                self.main_window.toolbar.set_zoom_level(self.zoom)
+
+    def set_grid_visible(self, visible):
+        """Grid görünürlüğünü ayarla"""
+        print(f"Board view setting grid to: {visible}")  # Debug için
+        if isinstance(self.scene, BoardGraphicsScene):
+            self.scene.set_grid_visible(visible)
+
+
+     
+    def wheelEvent(self, event):
+        """Mouse tekerleği ile zoom (Ctrl tuşuyla)"""
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            zoom_in = event.angleDelta().y() > 0
+            
+            if zoom_in:
+                self.zoom *= self.zoom_factor
+            else:
+                self.zoom /= self.zoom_factor
+                
+            # Zoom sınırlarını kontrol et
+            self.zoom = max(0.25, min(4.0, self.zoom))
+            
+            # Zoom uygula
+            self.setTransform(QTransform().scale(self.zoom, self.zoom))
+            
+            # Toolbar'daki göstergeyi güncelle
+            if self.main_window and hasattr(self.main_window, 'toolbar'):
+                self.main_window.toolbar.set_zoom_level(self.zoom)
+                
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
 class ElementEditor(QWidget):
     def __init__(self, element_item):

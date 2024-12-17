@@ -9,6 +9,8 @@ from typing import List, Dict, Any
 from src.core.element import Element
 from PyQt6.QtCore import QPointF
 
+from src.gui.board_view import ConnectionGraphicsItem, ElementGraphicsItem
+
 class Command(ABC):
     """Temel komut sınıfı"""
     
